@@ -1,15 +1,19 @@
 import { registerFont, createCanvas } from 'canvas';
 import { SerialPort } from 'serialport';
+import EventEmitter from 'node:events';
 
 const HEIGHT = 0x0C;
 const WIDTH = 0xE3;
 
 // protocol-dependent
 const PACKET_SIZE = 122;
+const FIRMWARE_REQUEST = [0x10, 0xFF, 0x20, 0xF1];
 const PREFIX = [0x10, 0xFF, 0xFE, 0x01, 0x10, 0xFF, 0xFE, 0x40, 0x1D, 0x76, 0x30, HEIGHT >> 8, HEIGHT & 0xFF, WIDTH >> 8, WIDTH & 0xFF, 0x00];
 const POSTFIX = [0x1B, 0x4A, 0x40, 0x10, 0xFF, 0xFE, 0x45];
 
 const FONT_SIZE = 32;
+
+const portData = new EventEmitter();
 
 const bitArrayToByte = (arr) => {
   let val = 0;
@@ -57,12 +61,22 @@ const createImage = (firstLine, secondLine, thirdLine) => {
   return img;
 };
 
+const getData = () => new Promise((resolve) => {
+  portData.once('data', (buf) => resolve(buf));
+});
+
 const [portPath, firstLine, secondLine, thirdLine] = process.argv.slice(2);
 
 const port = new SerialPort({ path: portPath, baudRate: 57600 });
 
+port.on('data', (buf) => portData.emit('data', buf));
+
 port.on('open', async () => {
   console.log('Port opened, ready to send data!');
+
+  await port.write(Buffer.from(FIRMWARE_REQUEST));
+  const firmwareVersion = await getData();
+  console.log(`Printer firmware version: ${firmwareVersion.toString()}`);
 
   const img = createImage(firstLine, secondLine, thirdLine);
   const msg = [...PREFIX, ...img, ...POSTFIX];
